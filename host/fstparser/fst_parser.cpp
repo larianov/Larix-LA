@@ -3,8 +3,6 @@
 #include "fst_parser.hpp"
 #include <cstdint>
 #include <format>
-#include <fstream>
-#include <iostream>
 #include <span>
 #include <string>
 #include <sys/types.h>
@@ -14,77 +12,6 @@ extern "C" {
     #include "fstapi.h"
 }
 
-handling_i2c::handling_i2c(uint8_t sda_ix, uint8_t scl_ix) : sda_idx(sda_ix), scl_idx(scl_ix) {
-}
-
-std::string handling_i2c::update(std::vector<std::pair<uint8_t, fstHandle>> &arr) {
-    auto status_scl = arr[scl_idx].first;
-    auto status_sda = arr[sda_idx].first;
-    std::string to_ret;
-    auto parallel_testinng = [&]() -> bool {
-        if (status_scl == 1 && last_state_of_scl == 1) {
-            if (last_state_of_sda == 0 && status_sda == 1) {
-                to_ret = stop;
-                address_defined = false;
-                state = i2c_states::START;
-                return true;
-            } else if (last_state_of_sda == 1 && status_sda == 0) {
-                state = i2c_states::READ_BYTE;
-                address_defined = false;
-                bit_placeholder = 0;
-                ammount_of_bytes = 0;
-                to_ret = re_start;
-                return true;
-            }
-        }
-        return false;
-    };
-    switch (state) {
-    case i2c_states::START:
-        if (status_scl == 1 && status_sda == 0 && last_state_of_sda == 1) {
-            state = i2c_states::READ_BYTE;
-            ammount_of_bytes = 0;
-            bit_placeholder = 0;
-            to_ret = start;
-        }
-        break;
-    case i2c_states::READ_BYTE:
-        if (parallel_testinng())
-            break;
-        if (last_state_of_scl == 0 && status_scl == 1) {
-            bit_placeholder = (bit_placeholder << 1) | status_sda;
-            ammount_of_bytes++;
-        }
-        if (ammount_of_bytes == 8) {
-            if (address_defined) {
-                to_ret = {std::format("DATA: {:02X}", bit_placeholder, bit_placeholder)};
-            } else {
-                to_ret = {
-                    std::format("ADDR: {:#04X}[{}]", bit_placeholder >> 1, (bit_placeholder & 1) ? "READ" : "WRITE")};
-                address_defined = true;
-            }
-
-            state = i2c_states::CHECK_ACK;
-        }
-        break;
-    case i2c_states::CHECK_ACK:
-        if (parallel_testinng())
-            break;
-        if (last_state_of_scl == 0 && status_scl == 1) {
-            state = i2c_states::READ_BYTE;
-            ammount_of_bytes = 0;
-            bit_placeholder = 0;
-            if (status_sda == 0) {
-                to_ret = ack;
-            } else {
-                to_ret = nack;
-            }
-        }
-    }
-    last_state_of_scl = status_scl;
-    last_state_of_sda = status_sda;
-    return to_ret;
-}
 
 
 handling_uart::handling_uart(uint8_t rx, uint8_t tx, uint32_t baudrate, uint32_t freq) : tx_((freq*256ULL)/baudrate), tx_idx(tx), rx_((freq*256ULL)/baudrate), rx_idx(rx) {

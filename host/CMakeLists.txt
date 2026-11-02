@@ -17,6 +17,7 @@ find_package(ZLIB REQUIRED)
 
 add_library(fstapi STATIC ${FST}/fstapi.c ${FST}/fastlz.c ${FST}/lz4.c)
 target_include_directories(fstapi PUBLIC ${FST})
+target_compile_definitions(fstapi PRIVATE FST_CONFIG_INCLUDE="fstapi.h")
 target_link_libraries(fstapi PUBLIC ZLIB::ZLIB)
 
 add_executable(logic_analyzer_host src/main.cpp fstparser/fst_parser.cpp)
