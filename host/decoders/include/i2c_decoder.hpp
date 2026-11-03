@@ -1,3 +1,4 @@
+#pragma once
 #include "decoders.hpp"
 
 enum class i2c_states : uint8_t {
@@ -6,7 +7,7 @@ enum class i2c_states : uint8_t {
     CHECK_ACK,
 };
 
-class I2C_decoder : Decoder {
+class I2C_decoder : public Decoder {
   private:
     uint8_t SDA_;
     uint8_t SCL_;
@@ -15,7 +16,6 @@ class I2C_decoder : Decoder {
     uint8_t ammount_of_bytes{};
     uint8_t last_state_of_sda{1};
     uint8_t last_state_of_scl{1};
-    bool first_iteration{true};
     bool address_defined{};
 
   public:
