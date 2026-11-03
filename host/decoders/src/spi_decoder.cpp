@@ -2,6 +2,7 @@
 #include "decoders.hpp"
 #include <cstdint>
 #include <format>
+#include <string>
 #include <utility>
 #include <vector>
 SPI_decoder::SPI_decoder(uint8_t cs, uint8_t MOSI, uint8_t MISO, uint8_t SCK, uint8_t byte_size, uint8_t spi_mode, bool msb_on) : cs_(cs), MOSI_(MOSI), mosi_(byte_size, msb_on), MISO_(MISO), miso_(byte_size, msb_on), SCK_(SCK), spi_mode_(spi_mode){};
@@ -71,4 +72,16 @@ std::string handling_spi_member::update(uint8_t bit_now){
         }
     }
     return to_ret;
+}
+
+std::vector<std::string> SPI_decoder::track_names() {
+    return std::vector<std::string>{"MOSI", "MISO"};
+}
+
+std::string SPI_decoder::pin_roles(uint8_t pin) {
+    if (pin == MOSI_) return "SPI_MOSI";
+    
+    if (pin == MISO_)
+        return "SPI_MISO";
+    return "";
 }

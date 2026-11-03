@@ -4,13 +4,14 @@ enum class uart_states : uint8_t{
     IDLE,
     POT_START,
     READ_BYTE,
+    PARITY,
     STOP
 };
 
 class handling_uart_member {
   private:
     uint64_t bond_clocking{};
-    uint32_t bit_placeholder{};
+    uint32_t byte_placeholder{};
     uint8_t byte_size_;
     uint8_t parity_; // 0 for none, 1 for odd, 2 for even
     uint8_t amm_stop_bits_;

@@ -5,6 +5,8 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include "decoders.hpp"
+#include <memory>
 #include "fstapi.h"
 
 enum class c_decoders : uint8_t {
@@ -15,26 +17,9 @@ enum class c_decoders : uint8_t {
 };
 
 
-struct logic_an_input {
-    uint32_t hz{};      
-    uint8_t channel{};  
-    uint8_t amm{};     
-};
-
-struct t_decoders {
-    c_decoders code;
-    uint8_t first_ch;
-    uint8_t second_ch;
-    std::optional<uint8_t> third_ch;
-    std::optional<uint8_t> fourth_ch;
-    std::optional<uint32_t> baudrate{115200};
-};
 
 
-void fst_parse(std::span<const uint8_t> to_parse, const logic_an_input &config, const std::string &name_of_file,
-               const std::vector<t_decoders> &ver);
-
-
+void fst_parse(std::span<const uint8_t> to_parse, const uint64_t freq, const std::string& name_of_file, std::vector<std::unique_ptr<Decoder>> &decoders, std::vector<std::string> &namings, std::vector<uint8_t>&chans);
 
 
 

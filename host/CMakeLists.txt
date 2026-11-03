@@ -5,11 +5,9 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# ---- shared warning flags (link to any target that should get them) ----
 add_library(project_warnings INTERFACE)
 target_compile_options(project_warnings INTERFACE -Wall -Wextra -Wshadow -Wpedantic)
 
-# ---- third-party: FST writer from gtkwave ----
 include(FetchContent)
 FetchContent_Declare(gtkwave
     GIT_REPOSITORY https://github.com/gtkwave/gtkwave
@@ -26,7 +24,6 @@ target_include_directories(fstapi PUBLIC ${FST})
 target_compile_definitions(fstapi PRIVATE FST_CONFIG_INCLUDE="fstapi.h")
 target_link_libraries(fstapi PUBLIC ZLIB::ZLIB)
 
-# ---- project modules ----
 add_subdirectory(decoders)
 add_subdirectory(fstparser)
 add_subdirectory(src)

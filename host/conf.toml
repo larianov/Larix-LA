@@ -1,0 +1,30 @@
+[device]
+transport = "serial"          # позже "tcp"
+port      = "/dev/ttyUSB0"
+baud      = 3_000_000
+
+[capture]
+mode    = "m10k"              # "m10k" | "ddr3" | "stream"
+rate_hz = 200_000_000
+samples = 500_000
+
+[trigger]
+type    = "edge"              # "command" | "edge"
+channel = 3
+edge    = "rising"            # "rising" | "falling"
+
+[[decoder]]
+type = "i2c"
+sda  = 0
+scl  = 1
+
+[[decoder]]
+type     = "uart"
+name     = "u1"
+rx       = 4
+tx       = 5
+baudrate = 115200
+config   = "8N1"
+
+[output]
+file = "capture.fst"

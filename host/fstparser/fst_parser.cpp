@@ -1,11 +1,16 @@
+#include <algorithm>
+#include <cstddef>
 #include <cstdlib>
 #include <fcntl.h>
 #include "fst_parser.hpp"
 #include <cstdint>
 #include <format>
+#include <memory>
 #include <span>
 #include <string>
-#include <sys/types.h>
+#include "decoders.hpp"
+#include "i2c_decoder.hpp"
+#include <string_view>
 #include <utility>
 #include <vector>
 extern "C" {
@@ -13,169 +18,41 @@ extern "C" {
 }
 
 
-
-handling_uart::handling_uart(uint8_t rx, uint8_t tx, uint32_t baudrate, uint32_t freq) : tx_((freq*256ULL)/baudrate), tx_idx(tx), rx_((freq*256ULL)/baudrate), rx_idx(rx) {
-}
-
-std::pair<std::string, std::string> handling_uart::update(std::vector<std::pair<uint8_t, fstHandle>> &arr){
-    std::pair<std::string, std::string>to_ret;
-    to_ret.first = tx_.update(arr[tx_idx].first);
-    to_ret.second = rx_.update(arr[rx_idx].first);
-    return to_ret;
-}
-
-handling_uart_member::handling_uart_member(uint64_t bondclocking) : bond_clocking(bondclocking){
-}
-
-
-std::string handling_uart_member::update(uint8_t bit_now){
-    std::string to_ret;
-    bool is_error{};
-    clk_out+=256;
-    if (!sync && bit_now == 1) sync = true;
-    switch (state) {
-        case uart_states::IDLE:
-            clk_out = 0;
-            bit_placeholder = 0;
-            ammount_of_bits = 0;
-            if (bit_now == 0 && sync && last_bit == 1) {
-                state = uart_states::POT_START;
-            }
-            break;
-        case uart_states::POT_START:
-            if (clk_out >= bond_clocking/2) {
-                if (bit_now == 0) {
-                    state = uart_states::READ_BYTE;
-                    clk_out -= bond_clocking/2;
-                    to_ret = "START";
-                    if (good_frames >= 12) 
-                        output_enabled = true;
-                    break;
-                }
-                else state = uart_states::IDLE;
-            }
-            break;
-        case uart_states::READ_BYTE:
-            if (clk_out >= bond_clocking) {
-                bit_placeholder |= (bit_now << ammount_of_bits);
-                ammount_of_bits++;
-                to_ret = {std::format("DATA: {:02X}/{:#04X}", bit_placeholder, bit_placeholder)};
-                clk_out -= bond_clocking;
-                if (ammount_of_bits == 8) {
-                    state = uart_states::STOP;
-                }
-            }
-            break;
-        case uart_states::STOP:
-            if (clk_out >= bond_clocking) {
-                if (bit_now == 1) {
-                    to_ret = std::format("STOP, FIN DATA: {:02X}/{:#04X}", bit_placeholder, bit_placeholder);
-                    if (good_frames < 16) {
-                        good_frames++;
-                    }
-                }
-                else{
-                    to_ret = std::format("FRAME_ER, ER DATA: {:02X}/{:#04X}", bit_placeholder, bit_placeholder);
-                    is_error = true;
-                }
-                state = uart_states::IDLE;
-            }       
-            break;
-    }
-    last_bit = bit_now;
-    if (is_error) {
-        good_frames = 0;
-        output_enabled = false;
-    }
-    else if (!output_enabled) {
-        to_ret = "";
-    }
-    return to_ret;
-}
-
-
-void fst_parse(std::span<const uint8_t> to_parse, const logic_an_input &config, const std::string &name_of_file,
-               const std::vector<t_decoders> &ver) {
-    uint64_t step_fs = 1'000'000'000'000'000ULL / config.hz;
+void fst_parse(std::span<const uint8_t> to_parse, const uint64_t freq, const std::string& name_of_file, std::vector<std::unique_ptr<Decoder>> &decoders, std::vector<std::string> &namings, std::vector<uint8_t>& chans) {
+    uint64_t step_fs = 1'000'000'000'000'000ULL / freq;
     auto *fst_object = fstWriterCreate(name_of_file.c_str(), 1);
     fstWriterSetTimescale(fst_object, -15);
-    fstWriterSetScope(fst_object, FST_ST_VCD_MODULE, "GPIO", nullptr);
+    fstWriterSetScope(fst_object, FST_ST_VCD_MODULE, "WIRES", nullptr);
     std::vector<std::pair<uint8_t, fstHandle>> arr;
-    std::vector<std::pair<handling_i2c, fstHandle>> i2c_handlers;
-    std::vector<std::pair<handling_uart, std::pair<fstHandle, fstHandle>>> uart_handlers;
-    std::vector<std::pair<handling_spi, std::pair<fstHandle, fstHandle>>> spi_handlers;
-
-    for (uint8_t i{}; i < config.amm + 1; i++) {
-        auto temp = std::string("gpio" + std::to_string(config.channel + i));
-        for (const auto &v : ver) {
-            if (v.first_ch == config.channel + i) {
-                if (v.code == c_decoders::I2C)
-                    temp += " (I2C_SDA)";
-                if (v.code == c_decoders::SPI)
-                    temp += " (SPI_MOSI)";
-                if (v.code == c_decoders::UART)
-                    temp += " (UART_RX)";
-                break;
-            } else if (v.second_ch == config.channel + i) {
-                if (v.code == c_decoders::I2C)
-                    temp += " (I2C_SCL)";
-                if (v.code == c_decoders::SPI)
-                    temp += " (SPI_MISO)";
-                if (v.code == c_decoders::UART)
-                    temp += " (UART_TX)";
-                break;
-            } else if (v.third_ch.has_value() && v.third_ch.value() == config.channel + i) {
-                temp += " (SPI_SCK)";
-                break;
-            }
-            else if (v.fourth_ch.has_value() && v.fourth_ch.value() == config.channel + i) {
-                temp += " (SPI_CS)";
+    std::vector<std::pair<std::unique_ptr<Decoder>, std::vector<fstHandle>>> var_dec;
+    for (uint8_t i{}; i < chans.size(); i++) {
+        auto temp = std::string("wire" + std::to_string(chans[i]));
+        for (auto &v : decoders) {
+            auto s = v->pin_roles(i);
+            if (!s.empty()) {
+                temp+=" " + s;
                 break;
             }
         }
-        arr.emplace_back(
-            std::pair{255, fstWriterCreateVar(fst_object, FST_VT_VCD_WIRE, FST_VD_INPUT, 1, temp.c_str(), 0)});
+        arr.emplace_back(255, fstWriterCreateVar(fst_object, FST_VT_VCD_WIRE, FST_VD_INPUT, 1, temp.c_str(), 0));
     }
-    for (const auto &v : ver) {
-        if (v.code == c_decoders::I2C) {
-            handling_i2c to_save{static_cast<uint8_t>(v.first_ch - config.channel),
-                                 static_cast<uint8_t>(v.second_ch - config.channel)};
-            i2c_handlers.emplace_back(
-                to_save, fstWriterCreateVar(fst_object, FST_VT_GEN_STRING, FST_VD_IMPLICIT, 1,
-                                            std::string(std::format("I2C[{}]{{{}}}-{{{}}}", i2c_handlers.size(),
-                                                                    v.first_ch, v.second_ch))
-                                                .c_str(),
-                                            0));
+    
+    for (std::size_t i{}; i < decoders.size(); i++) {
+        if (decoders[i]->track_names().size() > 1) {
+            var_dec.emplace_back(std::move(decoders[i]), std::vector<fstHandle>{fstWriterCreateVar(fst_object, FST_VT_GEN_STRING, FST_VD_IMPLICIT, 1, ((namings[i]+ "." + decoders[i]->track_names()[0]).c_str()),0), fstWriterCreateVar(fst_object, FST_VT_GEN_STRING, FST_VD_IMPLICIT, 1, ((namings[i] + "." + decoders[i]->track_names()[1]).c_str()),0)});
         }
-        if (v.code == c_decoders::UART) {
-            handling_uart to_save{static_cast<uint8_t>(v.first_ch - config.channel),
-                                  static_cast<uint8_t>(v.second_ch - config.channel), v.baudrate.value(), config.hz};
-            uart_handlers.emplace_back(
-                to_save,
-                std::pair(fstWriterCreateVar(
-                     fst_object, FST_VT_GEN_STRING, FST_VD_IMPLICIT, 1,
-                     std::string(std::format("UART_TX[{}]{{{}}}", uart_handlers.size(), v.second_ch)).c_str(), 0),                 fstWriterCreateVar(
-                     fst_object, FST_VT_GEN_STRING, FST_VD_IMPLICIT, 1,
-                     std::string(std::format("UART_RX[{}]{{{}}}", uart_handlers.size(), v.first_ch)).c_str(), 0)));
-        }
-        if (v.code == c_decoders::SPI) {
-            handling_spi to_save{static_cast<uint8_t>(v.first_ch - config.channel), static_cast<uint8_t>(v.second_ch - config.channel), static_cast<uint8_t>(v.third_ch.value() - config.channel), static_cast<uint8_t>(v.fourth_ch.value() - config.channel)};
-            auto _to_save = std::pair(fstWriterCreateVar(
-                 fst_object, FST_VT_GEN_STRING, FST_VD_IMPLICIT, 1,
-                 std::string(std::format("SPI_MOSI[{}]{{{}}}", spi_handlers.size(), v.first_ch)).c_str(), 0),                
-                 fstWriterCreateVar(
-                 fst_object, FST_VT_GEN_STRING, FST_VD_IMPLICIT, 1,
-                 std::string(std::format("SPI_MISO[{}]{{{}}}", spi_handlers.size(), v.second_ch)).c_str(), 0));
-            spi_handlers.emplace_back(to_save, _to_save);
+        else {
+            var_dec.emplace_back(std::move(decoders[i]), std::vector<fstHandle>{fstWriterCreateVar(fst_object, FST_VT_GEN_STRING, FST_VD_IMPLICIT, 1, ((namings[i]+ "." + decoders[i]->track_names()[0]).c_str()),0)});
         }
     }
+    
     uint64_t current_time_fs = 0;
     fstWriterSetUpscope(fst_object);
     fstWriterEmitTimeChange(fst_object, 0);
-
+    std::vector<Event> ev;
     for (auto v : to_parse) {
         fstWriterEmitTimeChange(fst_object, current_time_fs);
-        for (uint8_t i{}; i < config.amm + 1; i++) {
+        for (uint8_t i{}; i < chans.size(); i++) {
             uint8_t bit = (v >> i) & 1;
             if (bit != arr[i].first) {
                 if (bit == 0)
@@ -185,28 +62,13 @@ void fst_parse(std::span<const uint8_t> to_parse, const logic_an_input &config, 
                 arr[i].first = bit;
             }
         }
-        for (auto &handler : i2c_handlers) {
-            auto temp = handler.first.update(arr);
-            if (!temp.empty())
-                fstWriterEmitVariableLengthValueChange(fst_object, handler.second, temp.c_str(), temp.size());
-        }
-        for (auto &handler: uart_handlers) {
-            auto temp = handler.first.update(arr);
-            if (!temp.first.empty()) {
-                fstWriterEmitVariableLengthValueChange(fst_object, handler.second.first, temp.first.c_str(), temp.first.size());
+        for (auto &d : var_dec) {
+            d.first->update(v, ev);
+            if (ev.empty()) continue;
+            for (auto &evs: ev) {
+                fstWriterEmitVariableLengthValueChange(fst_object, d.second[evs.num], evs.txt.c_str(), evs.txt.size());
             }
-            if (!temp.second.empty()) {
-                fstWriterEmitVariableLengthValueChange(fst_object, handler.second.second, temp.second.c_str(), temp.second.size());
-            }
-        }
-        for(auto &handler : spi_handlers){
-            auto temp = handler.first.update(arr);
-            if (!temp.first.empty()) {
-                fstWriterEmitVariableLengthValueChange(fst_object, handler.second.first, temp.first.c_str(), temp.first.size());
-            }
-            if (!temp.second.empty()) {
-                fstWriterEmitVariableLengthValueChange(fst_object, handler.second.second, temp.second.c_str(), temp.second.size());
-            }
+            ev.clear();
         }
         current_time_fs += step_fs;
     }
