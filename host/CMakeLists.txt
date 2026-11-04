@@ -15,6 +15,13 @@ FetchContent_Declare(gtkwave
     GIT_SHALLOW TRUE
 )
 FetchContent_MakeAvailable(gtkwave)
+FetchContent_Declare(tomlplusplus
+    GIT_REPOSITORY https://github.com/marzer/tomlplusplus
+    GIT_TAG v3.4.0
+    GIT_SHALLOW TRUE
+)
+FetchContent_MakeAvailable(tomlplusplus)
+
 set(FST ${gtkwave_SOURCE_DIR}/gtkwave3-gtk3/src/helpers/fst)
 
 find_package(ZLIB REQUIRED)
@@ -26,4 +33,5 @@ target_link_libraries(fstapi PUBLIC ZLIB::ZLIB)
 
 add_subdirectory(decoders)
 add_subdirectory(fstparser)
+add_subdirectory(toml_parser)
 add_subdirectory(src)
