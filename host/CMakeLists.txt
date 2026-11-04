@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 add_library(project_warnings INTERFACE)
-target_compile_options(project_warnings INTERFACE -Wall -Wextra -Wshadow -Wpedantic)
+target_compile_options(project_warnings INTERFACE -Wall -Wextra -Wshadow -Wpedantic -Wno-free-nonheap-object)
 
 include(FetchContent)
 FetchContent_Declare(gtkwave

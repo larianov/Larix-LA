@@ -7,12 +7,12 @@ baud      = 3_000_000
 mode    = "m10k"              # "m10k" | "ddr3" | "stream"
 rate_hz = 200_000_000
 samples = 500_000
-starting_channel = 0
+starting_channel = 28
 
 
 [trigger]
 type    = "edge"              # "command" | "edge"
-channel = 3
+channel = 35
 edge    = "rising"            # "rising" | "falling"
 
 [[decoder]]

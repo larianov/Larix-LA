@@ -8,5 +8,10 @@ int main(int argc, char **argv) {
     }
     std::string str = argv[1];
     user_config conf;
-    parse_config(str, conf);
+    auto t = parse_config(str, conf);
+    if (t) {
+        std::cout << *t << std::endl;
+        return 1;
+    }
+    
 }

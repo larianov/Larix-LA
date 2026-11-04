@@ -2,7 +2,6 @@
 #include "decoders.hpp"
 #include <cstdint>
 #include <memory>
-#include <optional>
 #include <string>
 #include <vector>
 
@@ -19,8 +18,8 @@ enum transport{
 
 struct device{
     transport tr_;
-    std::optional<std::string>port_;
-    std::optional<uint32_t> baudrate_;
+    std::string port_;
+    uint32_t baudrate_;
 };
 
 enum mode{
@@ -32,7 +31,7 @@ enum mode{
 struct capture{
     mode mode_t;
     uint64_t sampling_freq_;
-    std::optional<uint32_t> samples_;
+    uint32_t samples_;
     uint8_t starting_channel;
 };
 
@@ -48,8 +47,8 @@ enum edge_type{
 
 struct trigger{
     trig_type type_t;
-    std::optional<edge_type> edge_t;
-    std::optional<uint8_t> channel;
+    edge_type edge_t;
+    uint8_t channel;
 };
 
 
